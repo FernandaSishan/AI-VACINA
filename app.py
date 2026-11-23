@@ -1,12 +1,14 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
+from pathlib import Path
+import base64
 from database import (init_db, add_person, list_people, add_vaccination,
                       list_vaccinations, dashboard_data, delete_person)
 from intelligence import classify_vaccination, generate_reminder
 
 st.set_page_config(
-    page_title="AI VACINA | Sistema de Vacinação",
+    page_title="VaciIA | Sistema de Vacinação",
     page_icon="💉",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -16,127 +18,27 @@ init_db()
 # ----------------------------------------------------------------------------
 # Estilo: visual de sistema de saúde (SUS / Caderneta digital)
 # ----------------------------------------------------------------------------
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-:root{
-  --navy:#075b78; --navy-dark:#053f56; --teal:#27bea7; --teal-dark:#159d8b;
-  --ink:#172b38; --muted:#647783; --line:#e1ebef;
-  --ok:#0f9d7a; --ok-bg:#e3f6f0; --warn:#b7791f; --warn-bg:#fdf3dc;
-  --bad:#c0392b; --bad-bg:#fde8e6; --info:#2b6cb0; --info-bg:#e6f0fb;
-}
-html, body, [class*="css"]{font-family:'Inter',sans-serif;}
-.stApp{background:linear-gradient(180deg,#edf6fa 0%,#f8fbfc 48%,#f3f8fa 100%);}
-.block-container{max-width:1180px;padding-top:1.4rem;padding-bottom:2rem;}
-#MainMenu, footer{visibility:hidden;}
-header[data-testid="stHeader"]{background:transparent;}
+def load_css(path="style.css"):
+    """Carrega o CSS externo (fica na mesma pasta do app.py)."""
+    css_file = Path(__file__).parent / path
+    if not css_file.exists():
+        st.warning(f"Arquivo de estilo não encontrado: {css_file}. "
+                   "Copie o style.css para a mesma pasta do app.py.")
+        return
+    st.markdown(f"<style>{css_file.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
-/* Sidebar */
-section[data-testid="stSidebar"]{background:linear-gradient(180deg,#053f56 0%,#075b78 60%,#0a7a8c 100%);}
-section[data-testid="stSidebar"] *{color:#eaf7fa;}
-section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.18);}
-.brand{display:flex;align-items:center;gap:12px;margin:4px 0 6px 0;}
-.brand-logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#27bea7,#5ee0cc);
-  display:flex;align-items:center;justify-content:center;font-size:1.5rem;box-shadow:0 6px 14px rgba(0,0,0,.22);}
-.brand-name{font-weight:800;font-size:1.25rem;line-height:1.1;color:#fff;}
-.brand-sub{font-size:.72rem;opacity:.8;letter-spacing:.05em;}
-section[data-testid="stSidebar"] div[role="radiogroup"]{gap:4px;}
-section[data-testid="stSidebar"] div[role="radiogroup"] label{
-  background:rgba(255,255,255,.06);border-radius:12px;padding:9px 12px;width:100%;
-  border:1px solid transparent;transition:.15s;}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:rgba(255,255,255,.14);}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){
-  background:rgba(39,190,167,.28);border-color:rgba(94,224,204,.6);}
-section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child{display:none;}
-section[data-testid="stSidebar"] div[role="radiogroup"] label p{font-weight:700;font-size:.95rem;}
-.side-note{font-size:.75rem;opacity:.75;line-height:1.4;}
 
-/* Topo da página */
-.page-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;}
-.page-title{font-size:1.65rem;font-weight:800;color:#0e3a4f;margin:0;}
-.page-sub{color:var(--muted);font-size:.92rem;margin-top:2px;}
-.date-chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 14px;
-  font-size:.82rem;font-weight:700;color:#356072;white-space:nowrap;}
+load_css()
 
-/* Hero */
-.hero{background:linear-gradient(115deg,#075b78 0%,#087b91 58%,#20b99f 100%);border-radius:22px;
-  padding:24px 28px;color:#fff;box-shadow:0 12px 28px rgba(5,91,120,.16);margin:6px 0 20px 0;
-  display:flex;justify-content:space-between;align-items:center;gap:18px;}
-.hero h2{font-size:clamp(1.3rem,2.6vw,1.9rem);margin:.2rem 0 .4rem 0;color:#fff;line-height:1.2;}
-.hero p{margin:0;color:#e4fbf7;font-size:.95rem;max-width:620px;}
-.hero-kicker{font-size:.74rem;font-weight:700;letter-spacing:.12em;opacity:.85;text-transform:uppercase;}
-.hero-icon{font-size:4rem;opacity:.9;}
 
-/* Métricas */
-div[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-radius:18px;
-  padding:15px 17px;box-shadow:0 5px 18px rgba(13,75,99,.05);}
-div[data-testid="stMetricLabel"]{color:var(--muted);font-weight:600;}
-div[data-testid="stMetricValue"]{color:var(--navy);font-weight:800;}
-
-.section-title{font-size:1.12rem;font-weight:800;color:#123c50;margin:.4rem 0 .8rem 0;}
-
-/* Cartão do paciente (caderneta) */
-.patient{background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px 20px;
-  display:flex;gap:18px;align-items:center;box-shadow:0 6px 20px rgba(13,75,99,.06);margin-bottom:16px;
-  border-left:6px solid var(--teal);}
-.avatar{width:62px;height:62px;border-radius:50%;background:linear-gradient(135deg,#075b78,#27bea7);
-  color:#fff;font-weight:800;font-size:1.35rem;display:flex;align-items:center;justify-content:center;flex:none;}
-.patient-name{font-size:1.2rem;font-weight:800;color:#12313f;}
-.patient-meta{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px;color:#526875;font-size:.88rem;}
-.patient-tag{font-size:.7rem;font-weight:800;letter-spacing:.1em;color:var(--teal-dark);text-transform:uppercase;}
-
-/* Linha do tempo de doses */
-.timeline{position:relative;margin-left:10px;padding-left:22px;border-left:3px solid #d5e6ec;}
-.t-item{position:relative;background:#fff;border:1px solid var(--line);border-radius:16px;
-  padding:14px 16px;margin-bottom:12px;box-shadow:0 4px 14px rgba(15,65,82,.045);}
-.t-item:before{content:"";position:absolute;left:-33px;top:20px;width:15px;height:15px;border-radius:50%;
-  background:var(--teal);border:3px solid #fff;box-shadow:0 0 0 2px var(--teal);}
-.t-item.late:before{background:var(--bad);box-shadow:0 0 0 2px var(--bad);}
-.t-item.soon:before{background:#e0a21c;box-shadow:0 0 0 2px #e0a21c;}
-.t-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
-.v-name{font-weight:800;color:#1a2c36;font-size:1.04rem;}
-.v-sub{color:#526875;margin-top:3px;font-size:.9rem;}
-.v-small{color:#657985;font-size:.8rem;margin-top:4px;}
-
-/* Badges de situação */
-.badge{display:inline-block;border-radius:999px;padding:4px 11px;font-size:.74rem;font-weight:800;white-space:nowrap;}
-.b-ok{background:var(--ok-bg);color:var(--ok);}
-.b-soon{background:var(--warn-bg);color:var(--warn);}
-.b-late{background:var(--bad-bg);color:var(--bad);}
-.b-none{background:var(--info-bg);color:var(--info);}
-
-/* Cartões de resumo da caderneta */
-.mini{background:#fff;border:1px solid var(--line);border-radius:16px;padding:13px 14px;text-align:center;}
-.mini-n{font-size:1.6rem;font-weight:800;color:var(--navy);line-height:1;}
-.mini-l{font-size:.76rem;color:var(--muted);font-weight:600;margin-top:5px;}
-
-/* Cartões de ação rápida */
-.quick-card{background:#fff;border:1px solid #dfe9ed;border-radius:17px;padding:14px 8px 6px 8px;
-  text-align:center;}
-.quick-icon{font-size:1.7rem;margin-bottom:2px;}
-.quick-label{font-size:.83rem;font-weight:700;color:#234454;margin-bottom:6px;}
-
-/* Lembrete */
-.rem{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:10px;
-  border-left:5px solid var(--teal);}
-.rem.late{border-left-color:var(--bad);} .rem.soon{border-left-color:#e0a21c;} .rem.none{border-left-color:#7fb0e0;}
-.rem-msg{color:#33505f;font-size:.9rem;margin-top:8px;}
-
-div.stButton > button{border-radius:12px;border:1px solid #dce8ec;font-weight:700;min-height:2.6rem;}
-div.stButton > button[kind="primary"]{background:var(--teal);border-color:var(--teal);color:#fff;}
-div.stButton > button[kind="primary"]:hover{background:var(--teal-dark);border-color:var(--teal-dark);color:#fff;}
-div[data-testid="stForm"]{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;}
-div[data-testid="stAlert"]{border-radius:13px;}
-.small-note{font-size:.82rem;color:#657985;}
-
-@media (max-width:700px){
-  .block-container{padding:.65rem .75rem 1.4rem .75rem;}
-  .hero{padding:18px;border-radius:18px;} .hero-icon{display:none;}
-  .patient{flex-direction:column;align-items:flex-start;}
-  .page-head{flex-direction:column;align-items:flex-start;}
-}
-</style>
-""", unsafe_allow_html=True)
+def logo_html(path="assets/logo.png"):
+    img = Path(__file__).parent / path
+    if not img.exists():
+        return '<div class="brand-logo">💉</div>'
+    mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".svg": "image/svg+xml"}.get(img.suffix.lower(), "image/png")
+    b64 = base64.b64encode(img.read_bytes()).decode()
+    return f'<div class="brand-logo has-img"><img src="data:{mime};base64,{b64}" alt="Logo VaciIA"></div>'
 
 # ----------------------------------------------------------------------------
 # Utilidades
@@ -225,9 +127,9 @@ if "nav" not in st.session_state:
     st.session_state["nav"] = NAV[0]
 
 with st.sidebar:
-    html("""
+    html(f"""
     <div class="brand">
-      <div class="brand-logo">💉</div>
+      {logo_html()}
       <div><div class="brand-name">AI VACINA</div><div class="brand-sub">SISTEMA DE VACINAÇÃO</div></div>
     </div>
     """)
